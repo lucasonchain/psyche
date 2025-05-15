@@ -304,3 +304,79 @@ cargo run --example http --sequence-length 1024 --batch-ids 1,2,3 urls "http://e
 ### Output
 
 The tool will output the retrieved samples for each batch ID. If a tokenizer is specified, the output will be decoded using the tokenizer. Otherwise, the raw sample data will be displayed.
+
+---
+
+### 11. Connecting to Azure Blob Storage
+
+The data provider can be extended to fetch data directly from Azure Blob Storage containers, enabling seamless integration with datasets stored in the Microsoft Azure cloud.
+
+#### 11.1. Prerequisites
+
+- An Azure Storage Account and a Blob Container with your data files.
+- An **Access Key** or **SAS Token** with read permissions for the container.
+- The `azure_storage` and `azure_storage_blobs` crates added to your `Cargo.toml` (if implementing support).
+
+#### 11.2. Usage Example
+
+Once Azure support is implemented, you can fetch data using a new CLI subcommand:
+
+```bash
+cargo run --example http --batch-ids 1,2,3 azure \
+  --account <STORAGE_ACCOUNT_NAME> \
+  --container <CONTAINER_NAME> \
+  [--prefix <OPTIONAL_PREFIX>] \
+  [--access-key <ACCESS_KEY_OR_SAS_TOKEN>]
+```
+
+- `--account`: Your Azure Storage Account name.
+- `--container`: The Blob Container name.
+- `--prefix`: (Optional) Only include blobs with this prefix.
+- `--access-key`: (Optional) Access key or SAS token for authentication.
+
+#### 11.3. How It Works
+
+1. The CLI authenticates with Azure using the provided access key or SAS token.
+2. It lists all blobs in the specified container (optionally filtered by prefix).
+3. The provider constructs signed URLs for each blob and fetches data using HTTP range requests, just like with public URLs or GCS buckets.
+4. Data is streamed and batched as with other providers.
+
+#### 11.4. Implementation Notes
+
+- Add an `Azure` variant to the CLI and `FileURLs` logic.
+- Use the [`azure_storage`](https://crates.io/crates/azure_storage) and [`azure_storage_blobs`](https://crates.io/crates/azure_storage_blobs) crates to list and access blobs.
+- Example Rust snippet for listing blobs:
+
+  ```rust
+  use azure_storage::prelude::*;
+  use azure_storage_blobs::prelude::*;
+
+  let http_client = new_http_client();
+  let storage_account = StorageAccountClient::new_access_key(
+      http_client.clone(),
+      "your_account",
+      "your_access_key",
+  );
+  let container_client = storage_account.as_container_client("your_container");
+
+  let blobs = container_client
+      .list_blobs()
+      .prefix("optional/prefix/")
+      .execute()
+      .await?;
+
+  for blob in blobs.blobs.blobs() {
+      println!("Blob name: {}", blob.name);
+  }
+  ```
+
+- Once you have the blob URLs, pass them to the existing HTTP data provider logic.
+
+#### 11.5. Security
+
+- **Never commit access keys or SAS tokens to source control.**
+- Use environment variables or a secrets manager to provide credentials securely.
+
+---
+
+With these steps, you can connect your data provider to Azure Blob Storage and use it as a seamless source for training data, just like local files, HTTP, or GCS.
